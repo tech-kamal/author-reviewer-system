@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const editor_withdrawal_controller_1 = require("../controllers/editor-withdrawal.controller");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const role_middleware_1 = require("../middleware/role.middleware");
+const router = (0, express_1.Router)();
+router.get("/", auth_middleware_1.requireAuth, (0, role_middleware_1.requireRole)("EDITOR"), editor_withdrawal_controller_1.getWithdrawalRequests);
+router.patch("/:id/decision", auth_middleware_1.requireAuth, (0, role_middleware_1.requireRole)("EDITOR"), editor_withdrawal_controller_1.decideWithdrawalRequest);
+exports.default = router;

@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const revisionRequest_controller_1 = require("../controllers/revisionRequest.controller");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const role_middleware_1 = require("../middleware/role.middleware");
+const router = (0, express_1.Router)();
+router.get("/revision-requests", auth_middleware_1.requireAuth, (0, role_middleware_1.requireRole)("REVIEWER"), revisionRequest_controller_1.getMyRevisionRequests);
+router.patch("/revision-requests/:revisionRequestId/received", auth_middleware_1.requireAuth, (0, role_middleware_1.requireRole)("REVIEWER"), revisionRequest_controller_1.acknowledgeRevisionRequest);
+exports.default = router;

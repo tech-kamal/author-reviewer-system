@@ -1,0 +1,402 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  EDITOR
+  REVIEWER
+}
+
+enum ReviewRequestStatus {
+  INVITED
+  ACCEPTED
+  DECLINED
+  REVIEW_SUBMITTED
+}
+
+enum RevisionType {
+  MAJOR_REVISION
+  MINOR_REVISION
+}
+
+enum RevisionRequestStatus {
+  SENT
+  RECEIVED
+  SUBMITTED
+}
+
+enum EditorialDecision {
+  ACCEPT
+  MINOR_REVISION
+  MAJOR_REVISION
+  REJECT
+}
+
+enum SubmissionDraftStatus {
+  DRAFT
+  SAVED
+  SUBMITTED
+}
+
+enum WithdrawalRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id           String @id @default(cuid())
+  name         String
+  email        String @unique
+  passwordHash String
+  role         Role
+
+  // Profile information
+  affiliation  String?
+  orcid        String?
+  country      String?
+  profilePhoto String?
+
+  // Existing relationships
+  papersCreated  Paper[]
+  reviewRequests ReviewRequest[]
+  notifications  Notification[]
+
+  // Revision requests
+  revisionRequestsSent     RevisionRequest[] @relation("RevisionEditor")
+  revisionRequestsReceived RevisionRequest[] @relation("RevisionAuthor")
+
+  // Author submission drafts
+  submissionDrafts SubmissionDraft[]
+
+  // Withdrawal requests made by this user
+  withdrawalRequests WithdrawalRequest[]
+
+  // Withdrawal requests decided by this editor
+  withdrawalDecisions WithdrawalRequest[] @relation("WithdrawalDecidedBy")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Paper {
+  id                  String  @id @default(cuid())
+  manuscriptId        String? @unique
+  authors             String?
+  title               String
+  abstract            String?
+  keywords            String?
+  reviewerSuggestions String?
+  pdfPath             String
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  reviewRequests     ReviewRequest[]
+  withdrawalRequests WithdrawalRequest[]
+  revisionRequests   RevisionRequest[]
+
+  editorialDecision String?
+  decisionAt        DateTime?
+
+  // Final approved withdrawal date
+  withdrawnAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ReviewRequest {
+  id String @id @default(cuid())
+
+  paperId    String
+  reviewerId String
+
+  status ReviewRequestStatus @default(INVITED)
+
+  invitedAt   DateTime  @default(now())
+  respondedAt DateTime?
+
+  dueDate DateTime?
+
+  declineReason String?
+
+  tokenHash String @unique
+
+  paper    Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  reviewer User  @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  review Review?
+
+  @@unique([paperId, reviewerId])
+  @@index([reviewerId])
+  @@index([paperId])
+}
+
+model Review {
+  id String @id @default(cuid())
+
+  reviewRequestId String @unique
+
+  recommendation   String?
+  commentsToAuthor String
+  commentsToEditor String?
+
+  attachmentPath String?
+  attachmentName String?
+
+  submittedAt DateTime @default(now())
+
+  reviewRequest ReviewRequest @relation(fields: [reviewRequestId], references: [id], onDelete: Cascade)
+}
+
+model EditorInvitation {
+  id String @id @default(cuid())
+
+  email String
+
+  tokenHash String @unique
+
+  expiresAt DateTime
+
+  usedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+model SubmissionDraft {
+  id String @id @default(cuid())
+
+  status SubmissionDraftStatus @default(DRAFT)
+
+  // Author who owns this draft
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  // Revision request associated with this submission
+  revisionRequestId String?
+  revisionRequest   RevisionRequest? @relation(fields: [revisionRequestId], references: [id], onDelete: SetNull)
+
+  // =====================================================
+  // STEP 1 - DETAILS
+  // =====================================================
+
+  manuscriptId String?
+  title        String?
+  abstract     String?
+  keywords     String?
+
+  // =====================================================
+  // STEP 2 - UPLOAD FILES
+  // =====================================================
+
+  mainFilePath String?
+  mainFileName String?
+
+  supplementaryFilePath String?
+  supplementaryFileName String?
+
+  // =====================================================
+  // STEP 3 - CONTRIBUTORS
+  // =====================================================
+
+  // Stored as JSON string for flexible contributor data
+  contributors String?
+
+  // =====================================================
+  // STEP 4 - FOR THE EDITOR
+  // =====================================================
+
+  editorMessage      String?
+  conflictOfInterest String?
+
+  // =====================================================
+  // STEP 5 - REVIEWER SUGGESTIONS
+  // =====================================================
+
+  // Stored as JSON string for reviewer suggestion data
+  reviewerSuggestions String?
+
+  // =====================================================
+  // STEP 6 - REVIEW & SUBMIT
+  // =====================================================
+
+  // Current step in the 6-step submission wizard
+  currentStep Int @default(1)
+
+  // =====================================================
+  // DRAFT STATUS
+  // =====================================================
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([authorId])
+  @@index([updatedAt])
+}
+
+model ManuscriptSequence {
+  id        Int      @id
+  nextValue Int
+  updatedAt DateTime @updatedAt
+}
+
+model WithdrawalRequest {
+  id String @id @default(cuid())
+
+  // Manuscript for which withdrawal is requested
+  paperId String
+
+  // Author who requested withdrawal
+  authorId String
+
+  // Reason provided by the author
+  reason String
+
+  // Current withdrawal request status
+  status WithdrawalRequestStatus @default(PENDING)
+
+  // Editor's comment when approving or rejecting
+  editorComment String?
+
+  // Editor who made the decision
+  decidedById String?
+
+  // Request and decision timestamps
+  requestedAt DateTime  @default(now())
+  decidedAt   DateTime?
+
+  // =====================================================
+  // RELATIONSHIPS
+  // =====================================================
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  decidedBy User? @relation("WithdrawalDecidedBy", fields: [decidedById], references: [id])
+
+  // =====================================================
+  // INDEXES
+  // =====================================================
+
+  @@index([paperId])
+  @@index([authorId])
+  @@index([status])
+  @@index([requestedAt])
+}
+
+model Notification {
+  id String @id @default(cuid())
+
+  userId String
+
+  type    String
+  title   String
+  message String
+
+  relatedId   String?
+  relatedType String?
+
+  isRead Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+model RevisionRequest {
+  id String @id @default(cuid())
+
+  // =====================================================
+  // PAPER
+  // =====================================================
+
+  paperId String
+  paper   Paper  @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  // =====================================================
+  // AUTHOR
+  // =====================================================
+
+  authorId String
+  author   User   @relation("RevisionAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  // =====================================================
+  // EDITOR
+  // =====================================================
+
+  editorId String
+  editor   User   @relation("RevisionEditor", fields: [editorId], references: [id], onDelete: Cascade)
+
+  // =====================================================
+  // REVISION TYPE
+  // =====================================================
+
+  revisionType RevisionType
+
+  // =====================================================
+  // CONTENT SENT TO AUTHOR
+  // =====================================================
+
+  // Editor-edited reviewer report
+  reviewReport String
+
+  // Editable comments intended for the author
+  commentsToAuthor String?
+
+  // =====================================================
+  // STATUS
+  // =====================================================
+
+  status RevisionRequestStatus @default(SENT)
+
+  // =====================================================
+  // TIMESTAMPS
+  // =====================================================
+
+  sentAt DateTime @default(now())
+
+  receivedAt DateTime?
+
+  submittedAt DateTime?
+
+  // =====================================================
+  // REVISED MANUSCRIPT
+  // =====================================================
+
+  revisionFilePath String?
+  revisionFileName String?
+
+  // =====================================================
+  // SUBMISSION DRAFT
+  // =====================================================
+
+  submissionDrafts SubmissionDraft[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // =====================================================
+  // INDEXES
+  // =====================================================
+
+  @@index([paperId])
+  @@index([authorId])
+  @@index([editorId])
+  @@index([status])
+  @@index([revisionType])
+}
